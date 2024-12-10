@@ -4,6 +4,9 @@ Escriba el codigo que ejecute la accion solicitada.
 
 # pylint: disable=import-outside-toplevel
 
+import pandas as pd
+from pathlib import Path
+import zipfile
 
 def clean_campaign_data():
     """
@@ -46,10 +49,52 @@ def clean_campaign_data():
     - const_price_idx
     - eurobor_three_months
 
-
-
     """
 
+    # Definir rutas:
+    input_folder = Path("files/input/")
+    output_folder = Path("files/output/")
+
+    # Crear carpeta de salida si no existe:
+    output_folder.mkdir(parents=True, exist_ok=True) 
+
+    # Leer los archivos comprimidos:
+    zip_files = list(input_folder.glob("*.zip"))
+
+
+    dataframes = []
+    for zip_file in zip_files:
+        with zipfile.ZipFile(zip_file) as z:
+            for csv_file in z.namelist():
+                if csv_file.endswith(".csv"):
+                    dataframes.append(pd.read_csv(z.open(csv_file)))
+
+    # Combinar los dataframes:
+    data = pd.concat(dataframes, ignore_index=True)
+
+    # Limpieza y creación de los archivos
+    # Client data
+    client = data[['client_id', 'age', 'job', 'marital', 'education', 'credit_default', 'mortgage']].copy()
+    client['job'] = client['job'].str.replace('.', '', regex=False).str.replace('-', '_', regex=False)
+    client['education'] = client['education'].str.replace('.', '_', regex=False).replace("unknown", pd.NA)
+    client['credit_default'] = client['credit_default'].apply(lambda x: 1 if x == "yes" else 0)
+    client['mortgage'] = client['mortgage'].apply(lambda x: 1 if x == "yes" else 0)
+
+    # Campaign data
+    campaign = data[['client_id', 'number_contacts', 'contact_duration', 'previous_campaign_contacts', 'previous_outcome', 'campaign_outcome', 'day', 'month']].copy()
+    campaign['previous_outcome'] = campaign['previous_outcome'].apply(lambda x: 1 if x == "success" else 0)
+    campaign['campaign_outcome'] = campaign['campaign_outcome'].apply(lambda x: 1 if x == "yes" else 0)
+    campaign['last_contact_date'] = pd.to_datetime(campaign['day'].astype(str) + '-' + campaign['month'] + '-2022', format='%d-%b-%Y')
+    campaign = campaign.drop(columns=['day', 'month'])
+
+    # Economics data
+    economics = data[['client_id', 'cons_price_idx', 'euribor_three_months']].copy()
+
+
+    # Guardar los archivos:
+    client.to_csv(output_folder / "client.csv", index=False)
+    campaign.to_csv(output_folder / "campaign.csv", index=False)
+    economics.to_csv(output_folder / "economics.csv", index=False)
     return
 
 
